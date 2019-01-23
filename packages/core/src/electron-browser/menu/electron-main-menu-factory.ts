@@ -18,7 +18,7 @@ import * as electron from 'electron';
 import { inject, injectable } from 'inversify';
 import {
     CommandRegistry, isOSX, ActionMenuNode, CompositeMenuNode,
-    MAIN_MENU_BAR, MenuModelRegistry, MenuPath
+    MAIN_MENU_BAR, MenuModelRegistry, MenuPath, SelectionService, UriSelection
 } from '../../common';
 import { PreferenceService, KeybindingRegistry, Keybinding, KeyCode, Key } from '../../browser';
 import { ContextKeyService } from '../../browser/context-key-service';
@@ -31,6 +31,9 @@ export class ElectronMainMenuFactory {
 
     @inject(ContextKeyService)
     protected readonly contextKeyService: ContextKeyService;
+
+    @inject(SelectionService)
+    protected readonly selectionService: SelectionService;
 
     constructor(
         @inject(CommandRegistry) protected readonly commandRegistry: CommandRegistry,
@@ -210,10 +213,11 @@ export class ElectronMainMenuFactory {
             // This is workaround for https://github.com/theia-ide/theia/issues/446.
             // Electron menus do not update based on the `isEnabled`, `isVisible` property of the command.
             // We need to check if we can execute it.
-            if (this.commandRegistry.isEnabled(command)) {
-                await this.commandRegistry.executeCommand(command);
-                if (this.commandRegistry.isVisible(command)) {
-                    this._menu.getMenuItemById(command).checked = this.commandRegistry.isToggled(command);
+            const uri = UriSelection.getUri(this.selectionService.selection);
+            if (this.commandRegistry.isEnabled(command, uri)) {
+                await this.commandRegistry.executeCommand(command, uri);
+                if (this.commandRegistry.isVisible(command, uri)) {
+                    this._menu.getMenuItemById(command).checked = this.commandRegistry.isToggled(command, uri);
                     electron.remote.getCurrentWindow().setMenu(this._menu);
                 }
             }
