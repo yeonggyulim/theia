@@ -21,6 +21,7 @@ import { Disposable } from '@theia/core/lib/common/disposable';
 import { CommandRegistryMain, CommandRegistryExt, MAIN_RPC_CONTEXT } from '../../api/plugin-api';
 import { RPCProtocol } from '../../api/rpc-protocol';
 import { KeybindingRegistry } from '@theia/core/lib/browser';
+import URI from '@theia/core/lib/common/uri';
 
 export class CommandRegistryMainImpl implements CommandRegistryMain {
     private proxy: CommandRegistryExt;
@@ -40,7 +41,9 @@ export class CommandRegistryMainImpl implements CommandRegistryMain {
             this.delegate.registerCommand(command, {
                 // tslint:disable-next-line:no-any
                 execute: (...args: any[]) => {
-                    this.proxy.$executeCommand(command.id, ...args);
+                    // plugin command handlers cannot handle Theia URI, only VS Code URI
+                    const resolvedArgs = (args || []).map(arg => arg instanceof URI ? arg['codeUri'] : arg);
+                    this.proxy.$executeCommand(command.id, ...resolvedArgs);
                 },
                 // Always enabled - a command can be executed programmatically or via the commands palette.
                 isEnabled() { return true; },
