@@ -18,12 +18,13 @@ import { Git, Repository } from '../common';
 import { injectable, inject } from 'inversify';
 import { WorkspaceService } from '@theia/workspace/lib/browser/workspace-service';
 import { FileSystem, FileStat } from '@theia/filesystem/lib/common';
-import { DisposableCollection, Event, Emitter } from '@theia/core';
+import {DisposableCollection, Event, Emitter, Command} from '@theia/core';
 import { LocalStorageService } from '@theia/core/lib/browser';
 import URI from '@theia/core/lib/common/uri';
 import { FileSystemWatcher } from '@theia/filesystem/lib/browser/filesystem-watcher';
 
 import debounce = require('lodash.debounce');
+import {ISCMService} from '@theia/scm/lib/common/scm';
 
 export interface GitRefreshOptions {
     readonly maxCount: number
@@ -35,6 +36,7 @@ export class GitRepositoryProvider {
     protected _selectedRepository: Repository | undefined;
     protected _allRepositories?: Repository[];
     protected readonly onDidChangeRepositoryEmitter = new Emitter<Repository | undefined>();
+    protected readonly onDidChangeCommandsEmitter = new Emitter<Command[]>();
     protected readonly selectedRepoStorageKey = 'theia-git-selected-repository';
     protected readonly allRepoStorageKey = 'theia-git-all-repositories';
 
@@ -43,7 +45,8 @@ export class GitRepositoryProvider {
         @inject(WorkspaceService) protected readonly workspaceService: WorkspaceService,
         @inject(FileSystemWatcher) protected readonly watcher: FileSystemWatcher,
         @inject(FileSystem) protected readonly fileSystem: FileSystem,
-        @inject(LocalStorageService) protected readonly storageService: LocalStorageService
+        @inject(LocalStorageService) protected readonly storageService: LocalStorageService,
+        @inject(ISCMService) protected readonly scmService: ISCMService
     ) {
         this.initialize();
     }
@@ -75,6 +78,25 @@ export class GitRepositoryProvider {
         if (!this._allRepositories) {
             await this.refresh({ maxCount: 1 });
         }
+        if (this._allRepositories) {
+            this._allRepositories.forEach(repository => {
+                this.scmService.registerSCMProvider({
+                    label: 'git',
+                    id: 'git_provider_id',
+                    contextValue: 'contextValue',
+                    onDidChange: new Emitter<void>().event,
+                    rootUri: repository.localUri,
+                    statusBarCommands: [{id: 'git.change.repository'}, {id: 'git.checkout'}, {id: 'git.publish'}],
+                    onDidChangeStatusBarCommands: this.onDidChangeCommandsEmitter.event,
+                    dispose(): void {
+                        dispose();
+                    }
+                });
+            });
+            const dispose: () => void = () => {
+                this.onDidChangeCommandsEmitter.dispose();
+            };
+        }
         await this.refresh();
     }
 
@@ -101,8 +123,24 @@ export class GitRepositoryProvider {
     get onDidChangeRepository(): Event<Repository | undefined> {
         return this.onDidChangeRepositoryEmitter.event;
     }
+    getOnDidChangecommands(): Event<Command[]> {
+        return this.onDidChangeCommandsEmitter.event;
+    }
+
+    fireDidChangeCommands(commands: Command[]): void {
+        this.onDidChangeCommandsEmitter.fire(commands);
+    }
+    fireDidRepositoryRe(commands: Command[]): void {
+        this.onDidChangeCommandsEmitter.fire(commands);
+    }
     protected fireDidChangeRepository(): void {
         this.onDidChangeRepositoryEmitter.fire(this._selectedRepository);
+        if (this._selectedRepository) {
+            const selected = this._selectedRepository;
+            this.scmService.repositories.forEach(repository => {
+                repository.setSelected(repository.provider.rootUri === selected.localUri);
+            });
+        }
     }
 
     /**
